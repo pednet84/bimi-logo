@@ -1439,15 +1439,25 @@ function zoomOut() {
 
 function fitToScreen() {
   const container = document.getElementById('canvas-container');
-  const maxX = Math.max(...nodes.map(n => n.x)) + 250;
-  const maxY = Math.max(...nodes.map(n => n.y)) + 150;
-  
-  const scaleX = container.clientWidth / maxX;
-  const scaleY = container.clientHeight / maxY;
-  state.zoom = Math.min(scaleX, scaleY, 1) * 0.9;
-  state.panX = 50;
-  state.panY = 50;
-  
+  const cw = container.clientWidth;
+  const ch = container.clientHeight;
+
+  const minX = Math.min(...nodes.map(n => n.x));
+  const minY = Math.min(...nodes.map(n => n.y));
+  const maxX = Math.max(...nodes.map(n => n.x)) + 220;
+  const maxY = Math.max(...nodes.map(n => n.y)) + 100;
+
+  const contentW = maxX - minX;
+  const contentH = maxY - minY;
+
+  const scaleX = cw / contentW;
+  const scaleY = ch / contentH;
+  state.zoom = Math.min(scaleX, scaleY) * 0.88;
+
+  // Centralizar o conteúdo no container
+  state.panX = (cw - contentW * state.zoom) / 2 - minX * state.zoom;
+  state.panY = (ch - contentH * state.zoom) / 2 - minY * state.zoom;
+
   updateCanvas();
   saveState();
 }
@@ -1517,10 +1527,11 @@ function init() {
   loadState();
   renderNodes();
   renderConnections();
-  updateCanvas();
   updateUI();
-  
-  // Initialize if first run
+
+  // Sempre ajusta ao tamanho atual da janela ao abrir
+  fitToScreen();
+
   if (!state.initiated) {
     state.initiated = Date.now();
     saveState();
@@ -1528,6 +1539,9 @@ function init() {
 }
 
 document.addEventListener('DOMContentLoaded', init);
+
+// Reajusta se a janela for redimensionada (ex: embed no Notion)
+window.addEventListener('resize', fitToScreen);
 </script>
 
 </body>
