@@ -1,0 +1,1515 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Processo de Folhas de Ponto</title>
+<style>
+:root {
+  --bg-canvas: #111827;
+  --bg-sidebar: #0f1f2e;
+  --bg-node: #132030;
+  --bg-node-hover: #1a2d40;
+  --border-node: #1e3a4a;
+  --border-completed: #2e9e4f;
+  --border-active: #2e9e4f;
+  --border-waiting: #f59e0b;
+  --text-primary: #ffffff;
+  --text-secondary: #94a3b8;
+  --text-muted: #4b6a7a;
+  --accent-green: #2e9e4f;
+  --accent-blue: #2e9e4f;
+  --accent-orange: #f59e0b;
+  --accent-red: #ef4444;
+  --connector: #1e3a4a;
+  --connector-completed: #2e9e4f;
+  --grid-color: rgba(30, 58, 74, 0.4);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg-canvas);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  color: var(--text-primary);
+}
+
+/* LAYOUT */
+.app {
+  display: flex;
+  height: 100vh;
+}
+
+/* SIDEBAR */
+.sidebar { display: none; }
+
+/* MAIN CANVAS */
+.main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Toolbar */
+.toolbar {
+  height: 48px;
+  background: var(--bg-sidebar);
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  flex-shrink: 0;
+}
+
+.toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.toolbar-btn {
+  width: 32px;
+  height: 32px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  font-size: 14px;
+}
+
+.toolbar-btn:hover {
+  background: rgba(255,255,255,0.05);
+  border-color: rgba(255,255,255,0.1);
+  color: var(--text-primary);
+}
+
+.toolbar-btn.active {
+  background: rgba(77, 171, 247, 0.15);
+  border-color: rgba(77, 171, 247, 0.3);
+  color: var(--accent-blue);
+}
+
+.toolbar-divider {
+  width: 1px;
+  height: 20px;
+  background: rgba(255,255,255,0.1);
+  margin: 0 8px;
+}
+
+.zoom-display {
+  font-size: 11px;
+  color: var(--text-muted);
+  min-width: 40px;
+  text-align: center;
+}
+
+/* Canvas Container */
+.canvas-container {
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+  background: 
+    radial-gradient(circle at center, rgba(77, 171, 247, 0.03) 0%, transparent 70%),
+    linear-gradient(var(--grid-color) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-color) 1px, transparent 1px);
+  background-size: 100% 100%, 20px 20px, 20px 20px;
+  cursor: grab;
+}
+
+.canvas-container.dragging {
+  cursor: grabbing;
+}
+
+.canvas {
+  position: absolute;
+  transform-origin: 0 0;
+  transition: transform 0.1s ease-out;
+}
+
+/* SVG Connectors */
+.connectors-svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.connector-path {
+  fill: none;
+  stroke: var(--connector);
+  stroke-width: 2;
+  stroke-linecap: round;
+  transition: stroke 0.3s, stroke-width 0.3s;
+}
+
+.connector-path.completed {
+  stroke: var(--connector-completed);
+  stroke-width: 2.5;
+}
+
+.connector-path.active {
+  stroke: #2e9e4f;
+  stroke-dasharray: 8 4;
+  animation: flowAnimation 1s linear infinite;
+}
+
+@keyframes flowAnimation {
+  from { stroke-dashoffset: 12; }
+  to { stroke-dashoffset: 0; }
+}
+
+/* NODES */
+.node {
+  position: absolute;
+  background: var(--bg-node);
+  border: 2px solid var(--border-node);
+  border-radius: 12px;
+  padding: 0;
+  min-width: 180px;
+  max-width: 220px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+  transition: all 0.2s ease;
+  overflow: hidden;
+}
+
+.node:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 30px rgba(0,0,0,0.4);
+  border-color: var(--accent-blue);
+}
+
+.node.completed {
+  border-color: var(--accent-green);
+}
+
+.node.completed:hover {
+  border-color: var(--accent-green);
+}
+
+.node.active {
+  border-color: var(--accent-blue);
+  box-shadow: 0 0 20px rgba(77, 171, 247, 0.3);
+}
+
+.node.waiting {
+  border-color: var(--accent-orange);
+}
+
+.node.locked {
+  opacity: 0.4;
+}
+
+.node.clickable {
+  cursor: pointer;
+}
+
+.node.clickable:hover {
+  background: var(--bg-node-hover);
+}
+
+/* Node Header */
+.node-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+
+.node-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.node-icon.start { background: linear-gradient(135deg, #2e9e4f, #1a6e35); }
+.node-icon.email { background: linear-gradient(135deg, #2e9e4f, #1a6e35); }
+.node-icon.file { background: linear-gradient(135deg, #f59e0b, #b45309); }
+.node-icon.send { background: linear-gradient(135deg, #2e9e4f, #1a6e35); }
+.node-icon.wait { background: linear-gradient(135deg, #f59e0b, #b45309); }
+.node-icon.task { background: linear-gradient(135deg, #2e9e4f, #1a6e35); }
+.node-icon.check { background: linear-gradient(135deg, #ef4444, #b91c1c); }
+.node-icon.sign { background: linear-gradient(135deg, #2e9e4f, #1a6e35); }
+.node-icon.doc { background: linear-gradient(135deg, #2e9e4f, #1a6e35); }
+.node-icon.company { background: linear-gradient(135deg, #475569, #334155); }
+
+.node-title {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-primary);
+  line-height: 1.3;
+  flex: 1;
+}
+
+/* Node Body */
+.node-body {
+  padding: 10px 14px;
+}
+
+.node-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.status-dot.completed { background: var(--accent-green); }
+.status-dot.active { background: var(--accent-blue); animation: pulse 1.5s infinite; }
+.status-dot.waiting { background: var(--accent-orange); animation: pulse 1.5s infinite; }
+.status-dot.pending { background: var(--text-muted); }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.status-text {
+  color: var(--text-muted);
+}
+
+.status-text.completed { color: var(--accent-green); }
+.status-text.active { color: var(--accent-blue); }
+.status-text.waiting { color: var(--accent-orange); }
+
+/* Node Handles */
+.node-handle {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  background: var(--border-node);
+  border: 2px solid var(--bg-node);
+  border-radius: 50%;
+  transition: all 0.2s;
+}
+
+.node-handle.input {
+  left: -6px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.node-handle.output {
+  right: -6px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.node:hover .node-handle {
+  background: var(--accent-blue);
+}
+
+.node.completed .node-handle {
+  background: var(--accent-green);
+}
+
+/* Completed Badge */
+.completed-badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 20px;
+  height: 20px;
+  background: var(--accent-green);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  color: white;
+  box-shadow: 0 2px 8px rgba(0,210,106,0.4);
+}
+
+/* Branch Label */
+.branch-label {
+  position: absolute;
+  background: rgba(15, 52, 96, 0.9);
+  border: 1px solid var(--border-node);
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 10px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+/* MODAL */
+.modal-overlay {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0,0,0,0.7);
+  z-index: 1000;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(4px);
+}
+
+.modal-overlay.show {
+  display: flex;
+}
+
+.modal {
+  background: var(--bg-sidebar);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 16px;
+  padding: 24px;
+  max-width: 400px;
+  width: 90%;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+}
+
+.modal-icon {
+  width: 48px;
+  height: 48px;
+  background: rgba(255,107,107,0.15);
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  margin-bottom: 16px;
+}
+
+.modal-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+
+.modal-text {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  margin-bottom: 24px;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+.modal-btn {
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border: none;
+  transition: all 0.2s;
+}
+
+.modal-btn-cancel {
+  background: rgba(255,255,255,0.05);
+  color: var(--text-secondary);
+  border: 1px solid rgba(255,255,255,0.1);
+}
+
+.modal-btn-cancel:hover {
+  background: rgba(255,255,255,0.1);
+}
+
+.modal-btn-confirm {
+  background: var(--accent-red);
+  color: white;
+}
+
+.modal-btn-confirm:hover {
+  background: #ff5252;
+}
+
+/* MINIMAP */
+.minimap {
+  position: absolute;
+  bottom: 16px;
+  right: 16px;
+  width: 180px;
+  height: 100px;
+  background: rgba(22, 33, 62, 0.95);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+}
+
+.minimap-content {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.minimap-node {
+  position: absolute;
+  background: var(--border-node);
+  border-radius: 2px;
+  transition: background 0.3s;
+}
+
+.minimap-node.completed {
+  background: var(--accent-green);
+}
+
+.minimap-viewport {
+  position: absolute;
+  border: 1px solid var(--accent-blue);
+  background: rgba(77, 171, 247, 0.1);
+  border-radius: 2px;
+  pointer-events: none;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+
+/* Responsive */
+@media (max-width: 768px) {
+  .sidebar { display: none; }
+  .minimap { display: none; }
+}
+
+/* TOOLTIP DE INSTRUÇÃO */
+.instruction-tooltip {
+  position: absolute;
+  z-index: 500;
+  max-width: 300px;
+  background: #0f1f2e;
+  border: 1px solid rgba(46,158,79,0.35);
+  border-radius: 12px;
+  padding: 14px 16px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5), 0 0 0 1px rgba(46,158,79,0.1);
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  pointer-events: none;
+}
+
+.instruction-tooltip.visible {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.tooltip-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  gap: 8px;
+}
+
+.tooltip-tag {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: #2e9e4f;
+  background: rgba(46,158,79,0.12);
+  padding: 2px 8px;
+  border-radius: 20px;
+}
+
+.tooltip-close {
+  width: 20px;
+  height: 20px;
+  background: rgba(255,255,255,0.06);
+  border: none;
+  border-radius: 50%;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  line-height: 1;
+  pointer-events: auto;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+
+.tooltip-close:hover {
+  background: rgba(255,255,255,0.12);
+  color: var(--text-primary);
+}
+
+.tooltip-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+  line-height: 1.3;
+}
+
+.tooltip-text {
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  line-height: 1.65;
+}
+
+.tooltip-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 10px;
+  font-size: 11px;
+  color: #2e9e4f;
+  text-decoration: none;
+  background: rgba(46,158,79,0.08);
+  padding: 4px 10px;
+  border-radius: 6px;
+  pointer-events: auto;
+  transition: background 0.15s;
+}
+
+.tooltip-link:hover {
+  background: rgba(46,158,79,0.18);
+}
+
+.tooltip-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 7px 10px;
+  background: rgba(0,210,106,0.08);
+  border: 1px solid rgba(0,210,106,0.2);
+  border-radius: 8px;
+  font-size: 11px;
+  color: var(--accent-green);
+  font-style: italic;
+}
+
+.tooltip-arrow {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  background: #0f1f2e;
+  border-left: 1px solid rgba(46,158,79,0.35);
+  border-top: 1px solid rgba(46,158,79,0.35);
+  transform: rotate(45deg);
+  bottom: -6px;
+  left: 24px;
+}
+
+/* Botão instrução ativo */
+.toolbar-btn.instructions-on {
+  background: rgba(46,158,79,0.15);
+  border-color: rgba(46,158,79,0.35);
+  color: #2e9e4f;
+}
+
+/* Header progress */
+.header-progress {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.header-ring-wrap {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+}
+
+.btn-reset-header {
+  color: var(--accent-red) !important;
+  border-color: rgba(255,107,107,0.2) !important;
+}
+
+.btn-reset-header:hover {
+  background: rgba(255,107,107,0.12) !important;
+  border-color: rgba(255,107,107,0.4) !important;
+}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <!-- Main Canvas -->
+  <main class="main">
+    <div class="toolbar">
+      <div class="toolbar-group">
+        <button class="toolbar-btn" onclick="zoomIn()" title="Zoom In">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35M11 8v6M8 11h6"/></svg>
+        </button>
+        <button class="toolbar-btn" onclick="zoomOut()" title="Zoom Out">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35M8 11h6"/></svg>
+        </button>
+        <span class="zoom-display" id="zoom-display">100%</span>
+        <div class="toolbar-divider"></div>
+        <button class="toolbar-btn" onclick="fitToScreen()" title="Ajustar à Tela">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3"/></svg>
+        </button>
+        <button class="toolbar-btn" onclick="centerCanvas()" title="Centralizar">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v4m0 12v4M2 12h4m12 0h4"/></svg>
+        </button>
+        <div class="toolbar-divider"></div>
+        <button class="toolbar-btn instructions-on" id="btn-instructions" onclick="toggleInstructions()" title="Instruções">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+        </button>
+      </div>
+      <div class="toolbar-group" style="gap: 12px;">
+        <div class="header-progress">
+          <div class="header-ring-wrap">
+            <svg width="28" height="28" viewBox="0 0 28 28">
+              <circle cx="14" cy="14" r="11" fill="none" stroke="rgba(255,255,255,0.07)" stroke-width="3"/>
+              <circle id="progress-ring" cx="14" cy="14" r="11" fill="none" stroke="url(#ringGradH)" stroke-width="3"
+                stroke-linecap="round" stroke-dasharray="69.1" stroke-dashoffset="69.1"
+                transform="rotate(-90 14 14)" style="transition: stroke-dashoffset 0.5s ease"/>
+              <defs>
+                <linearGradient id="ringGradH" x1="0%" y1="0%" x2="100%" y2="0%">
+                  <stop offset="0%" stop-color="#2e9e4f"/>
+                  <stop offset="100%" stop-color="#66bb6a"/>
+                </linearGradient>
+              </defs>
+            </svg>
+          </div>
+          <span id="progress-text" style="font-size:12px; font-weight:600; color:var(--accent-green);">0/18</span>
+          <span style="font-size:11px; color:var(--text-muted);" id="progress-pct">0%</span>
+        </div>
+        <div class="toolbar-divider"></div>
+        <button class="toolbar-btn btn-reset-header" onclick="showResetModal()" title="Resetar Progresso">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 019-9 9.75 9.75 0 016.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 01-9 9 9.75 9.75 0 01-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="canvas-container" id="canvas-container">
+      <div class="canvas" id="canvas">
+        <svg class="connectors-svg" id="connectors-svg" width="2000" height="1000"></svg>
+        <!-- Nodes will be rendered here -->
+        <div class="instruction-tooltip" id="instruction-tooltip">
+          <div class="tooltip-arrow" id="tooltip-arrow"></div>
+          <div class="tooltip-header">
+            <span class="tooltip-tag">Instrução</span>
+            <button class="tooltip-close" onclick="closeTooltip()">✕</button>
+          </div>
+          <div class="tooltip-title" id="tooltip-title"></div>
+          <div class="tooltip-text" id="tooltip-text"></div>
+          <div class="tooltip-hint" id="tooltip-hint" style="display:none">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5"/></svg>
+            <span id="tooltip-hint-text"></span>
+          </div>
+          <a class="tooltip-link" id="tooltip-link" href="#" target="_blank" style="display:none">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+            Ver exemplos no Notion
+          </a>
+        </div>
+        <div class="instruction-tooltip" id="instruction-tooltip-b">
+          <div class="tooltip-arrow" id="tooltip-arrow-b"></div>
+          <div class="tooltip-header">
+            <span class="tooltip-tag">Instrução</span>
+            <button class="tooltip-close" onclick="closeTooltipB()">✕</button>
+          </div>
+          <div class="tooltip-title" id="tooltip-title-b"></div>
+          <div class="tooltip-text" id="tooltip-text-b"></div>
+          <div class="tooltip-hint" id="tooltip-hint-b" style="display:none">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5"/></svg>
+            <span id="tooltip-hint-text-b"></span>
+          </div>
+          <a class="tooltip-link" id="tooltip-link-b" href="#" target="_blank" style="display:none">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+            Ver exemplos no Notion
+          </a>
+        </div>
+      </div>
+      <div class="minimap" id="minimap">
+        <div class="minimap-content" id="minimap-content">
+          <div class="minimap-viewport" id="minimap-viewport"></div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- Reset Modal -->
+<div class="modal-overlay" id="reset-modal" onclick="if(event.target===this)hideResetModal()">
+  <div class="modal">
+    <div class="modal-icon">⚠️</div>
+    <div class="modal-title">Resetar Progresso</div>
+    <div class="modal-text">Tem certeza que deseja resetar todo o progresso? Esta ação não pode ser desfeita e você perderá todas as etapas concluídas.</div>
+    <div class="modal-actions">
+      <button class="modal-btn modal-btn-cancel" onclick="hideResetModal()">Cancelar</button>
+      <button class="modal-btn modal-btn-confirm" onclick="confirmReset()">Resetar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ========== CONFIG ==========
+const STORAGE_KEY = 'mapa_workflow_v2';
+const EXPIRY_DAYS = 10;
+
+// ========== INSTRUÇÕES ==========
+const instructions = {
+  request: {
+    title: 'Solicitar Arquivos de Ponto (.txt)',
+    text: 'Solicite ao Setor Responsável do Contrato 497/22 - DNIT a emissão dos Arquivos .txt do mês atual. Nesses arquivos estão as informações de ponto eletrônico dos colaboradores da 497/22.',
+    hint: 'Para solicitar, basta clicar no node.'
+  },
+  receive: {
+    title: 'Aguardar Recebimento dos .txt',
+    text: 'Aguarde a resposta do Setor Responsável com os arquivos .txt em anexo, no mesmo e-mail em que foi feita a solicitação.'
+  },
+  ste_send: {
+    title: 'Enviar .txt — STE',
+    text: 'Envie o arquivo .txt para o Setor Responsável pela emissão da Prévia das Folhas de Pontos Eletrônicas da STE (Final 8544), que usará o arquivo para gerar a prévia.',
+    hint: 'Para enviar, basta clicar no node.'
+  },
+  gis_send: {
+    title: 'Enviar .txt — GISTRAN',
+    text: 'Envie o arquivo .txt para o Setor Responsável pela emissão da Prévia das Folhas de Pontos Eletrônicas da GISTRAN (Final 9202), que usará o arquivo para gerar a prévia.',
+    hint: 'Para enviar, basta clicar no node.'
+  },
+  enviar_txt: {
+    title: 'Enviar .txt — STE e GISTRAN',
+    text: 'Envie o arquivo .txt para os Setores Responsáveis de cada empresa. STE (Final 8544) e GISTRAN (Final 9202) usarão o arquivo para gerar as Prévias das Folhas de Ponto.',
+    hint: 'Para enviar, basta clicar em cada node.'
+  },
+  previas: {
+    title: 'Aguardando Prévias das Folhas de Ponto',
+    text: 'Aguarde o recebimento das Prévias das Folhas de Ponto do Setor Responsável. As prévias podem não conter as justificativas das ausências nos horários em que o colaborador deveria estar em atividade.'
+  },
+  marcacoes: {
+    title: 'Realizar Marcações nas Prévias',
+    text: 'Após receber as Prévias, utilize um Editor de PDF para fazer as marcações nas folhas. Essas marcações são apontamentos de pendências para futura verificação de Justificativas e Atestados.'
+  },
+  notion: {
+    title: 'Realizar Task no Notion',
+    text: 'Faça o upload das duas Folhas Prévias na Task correspondente no Notion — geralmente nomeada como "(FPxx) Encaminhar prévia da Folha de Ponto - mmm/aa". Na task "(FPxx) Ajustar Pendências (Ausências e Atrasos) - mmm/aa", relate por escrito o que precisa ser ajustado.',
+    link: 'https://www.notion.so/Folhas-de-Ponto-STE-Gistran-31b31ba546038015b47dee6754b4f0e0?v=31e31ba54603804282aa000ca22c3094&source=copy_link#31e31ba546038005a2abc8e3bb9a55eb'
+  },
+  gestor: {
+    title: 'Aguardando Confirmação do Gestor',
+    text: 'Aguarde a análise do Gestor sobre o que deve ser ajustado nas Prévias das Folhas de Ponto, junto às Justificativas e Atestados. Após a confirmação, seguiremos para solicitar as Folhas de Ponto Finais.'
+  },
+  ajustes: {
+    title: 'Solicitar Ajuste de Folha',
+    text: 'Solicite ao Setor Responsável os ajustes necessários, encaminhando a prévia com as marcações, Justificativas e Atestados de forma organizada para o Setor que gerou a Prévia das Folhas de Ponto.'
+  },
+  folhas_final: {
+    title: 'Aguardando Folhas de Ponto Final',
+    text: 'Aguarde o recebimento das Folhas de Ponto Final, já prontas para assinatura do colaborador.'
+  },
+  assinatura: {
+    title: 'Enviar para Assinatura',
+    text: 'Encaminhe as Folhas de Ponto Finais ao Gestor do Contrato 497/22 (Engenheiro Pedro Valente), que solicitará a assinatura dos colaboradores.'
+  },
+  receber_assinadas: {
+    title: 'Receber Folhas Assinadas',
+    text: 'Esta etapa pode levar alguns dias, pois o Gestor do Contrato 497/22 não está presente diariamente na STE. Após o recebimento das folhas assinadas, estaremos próximos da entrega final do mês.'
+  },
+  digitalizar: {
+    title: 'Digitalizar e Protocolar',
+    text: 'Etapa final: digitalize as Folhas de Ponto para arquivo e entregue os originais aos emitentes das Folhas Prévias/Final.'
+  }
+};
+
+// Mapa: ao concluir nodeId X, mostrar instrução do nodeId Y
+const instructionTriggers = {
+  start:             'request',
+  request:           'receive',
+  receive:           'enviar_txt',
+  ste_label:         'enviar_txt',
+  gis_label:         'enviar_txt',
+  previas:           'marcacoes',
+  marcacoes:         'notion',
+  notion:            'gestor',
+  gestor:            'ajustes',
+  ajustes:           'folhas_final',
+  folhas_final:      'assinatura',
+  assinatura:        'receber_assinadas',
+  receber_assinadas: 'digitalizar'
+};
+
+let instructionsEnabled = true;
+
+// ========== STATE ==========
+let state = {
+  initiated: null,
+  lastEdit: null,
+  completedNodes: new Set(),
+  zoom: 1,
+  panX: 50,
+  panY: 50
+};
+
+// ========== NODE DEFINITIONS ==========
+const nodes = [
+  { id: 'start', x: 80, y: 280, title: 'Início do Processo', icon: 'start', type: 'start', action: 'iniciarProcesso' },
+  { id: 'request', x: 320, y: 280, title: 'Solicitar Arquivos de Ponto (.txt)', icon: 'email', type: 'action', action: 'solicitarArquivos' },
+  { id: 'receive', x: 560, y: 280, title: 'Arquivos .txt Recebidos', icon: 'file', type: 'checkpoint', waitingText: 'Aguardando .txt', action: 'receberArquivos' },
+  
+  // Branch STE
+  { id: 'ste_label', x: 800, y: 180, title: 'STE → Final 8544', icon: 'company', type: 'info' },
+  { id: 'ste_send', x: 1020, y: 180, title: 'Enviar .txt', icon: 'send', type: 'action', action: 'enviarSTE' },
+  
+  // Branch GISTRAN
+  { id: 'gis_label', x: 800, y: 380, title: 'GISTRAN → Final 9202', icon: 'company', type: 'info' },
+  { id: 'gis_send', x: 1020, y: 380, title: 'Enviar .txt', icon: 'send', type: 'action', action: 'enviarGIS' },
+  
+  // After branches merge
+  { id: 'previas', x: 1260, y: 280, title: 'Prévias das Folhas de Ponto', icon: 'wait', type: 'checkpoint', waitingText: 'Aguardando Prévias', action: 'receberPrevias' },
+  { id: 'marcacoes', x: 1500, y: 280, title: 'Realizar Marcações nas Prévias', icon: 'task', type: 'task', action: 'completar' },
+  { id: 'notion', x: 1740, y: 280, title: 'Realizar Task no Notion', icon: 'task', type: 'task', action: 'abrirNotion' },
+  { id: 'gestor', x: 1980, y: 280, title: 'Aguardando Confirmação do Gestor', icon: 'wait', type: 'checkpoint', action: 'completar' },
+  { id: 'ajustes', x: 2220, y: 280, title: 'Solicitar Ajustes de Folha de Ponto', icon: 'email', type: 'action', action: 'completar' },
+  
+  // Branch Ajustes
+  { id: 'ste_ajuste', x: 2460, y: 180, title: 'STE - Encaminhar Ajustes', icon: 'send', type: 'action', action: 'completar' },
+  { id: 'gis_ajuste', x: 2460, y: 380, title: 'GISTRAN - Encaminhar Ajustes', icon: 'send', type: 'action', action: 'completar' },
+  
+  // Final steps
+  { id: 'folhas_final', x: 2700, y: 280, title: 'Aguardando Folhas de Ponto Final', icon: 'wait', type: 'checkpoint', waitingText: 'Aguardando Folhas de Ponto Final', completedText: 'Recebido Folhas de Ponto Final', action: 'completar' },
+  { id: 'assinatura', x: 2940, y: 280, title: 'Enviar para Assinatura', icon: 'sign', type: 'action', action: 'completar' },
+  { id: 'receber_assinadas', x: 3180, y: 280, title: 'Receber Folhas Assinadas', icon: 'file', type: 'checkpoint', action: 'completar' },
+  { id: 'digitalizar', x: 3420, y: 280, title: 'Digitalizar e Protocolar', icon: 'doc', type: 'end', action: 'completar' },
+];
+
+// ========== CONNECTIONS ==========
+const connections = [
+  { from: 'start', to: 'request' },
+  { from: 'request', to: 'receive' },
+  { from: 'receive', to: 'ste_label', branch: 'top' },
+  { from: 'receive', to: 'gis_label', branch: 'bottom' },
+  { from: 'ste_label', to: 'ste_send' },
+  { from: 'gis_label', to: 'gis_send' },
+  { from: 'ste_send', to: 'previas', branch: 'top' },
+  { from: 'gis_send', to: 'previas', branch: 'bottom' },
+  { from: 'previas', to: 'marcacoes' },
+  { from: 'marcacoes', to: 'notion' },
+  { from: 'notion', to: 'gestor' },
+  { from: 'gestor', to: 'ajustes' },
+  { from: 'ajustes', to: 'ste_ajuste', branch: 'top' },
+  { from: 'ajustes', to: 'gis_ajuste', branch: 'bottom' },
+  { from: 'ste_ajuste', to: 'folhas_final', branch: 'top' },
+  { from: 'gis_ajuste', to: 'folhas_final', branch: 'bottom' },
+  { from: 'folhas_final', to: 'assinatura' },
+  { from: 'assinatura', to: 'receber_assinadas' },
+  { from: 'receber_assinadas', to: 'digitalizar' },
+];
+
+// ========== UTILITIES ==========
+function formatDate(timestamp) {
+  if (!timestamp) return '--';
+  const d = new Date(timestamp);
+  return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+}
+
+function getPeriodo() {
+  const h = new Date();
+  const m = h.getMonth();
+  const a = h.getFullYear();
+  const inicio = new Date(a, m - 1, 18);
+  const fim = new Date(a, m, 19);
+  const fmt = d => `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
+  return fmt(inicio) + ' a ' + fmt(fim);
+}
+
+function getRefMes() {
+  const h = new Date();
+  const d = new Date(h.getFullYear(), h.getMonth() - 1, 1);
+  return d.toLocaleDateString('pt-BR', { month: 'short' }) + '/' + d.getFullYear();
+}
+
+// ========== STORAGE ==========
+function saveState() {
+  const now = Date.now();
+  if (!state.initiated) state.initiated = now;
+  state.lastEdit = now;
+  
+  const data = {
+    initiated: state.initiated,
+    lastEdit: state.lastEdit,
+    completedNodes: Array.from(state.completedNodes),
+    zoom: state.zoom,
+    panX: state.panX,
+    panY: state.panY,
+    timestamp: now
+  };
+  
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  updateUI();
+}
+
+function loadState() {
+  const saved = localStorage.getItem(STORAGE_KEY);
+  if (!saved) return false;
+  
+  try {
+    const data = JSON.parse(saved);
+    
+    // Check expiry
+    if ((Date.now() - data.timestamp) / (24 * 60 * 60 * 1000) > EXPIRY_DAYS) {
+      localStorage.removeItem(STORAGE_KEY);
+      return false;
+    }
+    
+    state.initiated = data.initiated;
+    state.lastEdit = data.lastEdit;
+    state.completedNodes = new Set(data.completedNodes || []);
+    state.zoom = data.zoom || 1;
+    state.panX = data.panX || 50;
+    state.panY = data.panY || 50;
+    
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+// ========== RENDERING ==========
+function getNodeStatus(nodeId) {
+  if (state.completedNodes.has(nodeId)) return 'completed';
+  
+  const node = nodes.find(n => n.id === nodeId);
+  if (!node) return 'pending';
+  
+  // Check if this node can be activated
+  const incomingConnections = connections.filter(c => c.to === nodeId);
+  if (incomingConnections.length === 0) return 'active'; // Start node
+  
+  const allInputsCompleted = incomingConnections.every(c => state.completedNodes.has(c.from));
+  
+  if (allInputsCompleted && node.type === 'checkpoint') return 'waiting';
+  if (allInputsCompleted) return 'active';
+  
+  return 'pending';
+}
+
+function isNodeClickable(nodeId) {
+  const node = nodes.find(n => n.id === nodeId);
+  if (!node || !node.action) return false;
+  
+  const status = getNodeStatus(nodeId);
+  return status === 'active' || status === 'waiting';
+}
+
+function renderNodes() {
+  const canvas = document.getElementById('canvas');
+  
+  // Clear existing nodes (but keep SVG)
+  canvas.querySelectorAll('.node').forEach(n => n.remove());
+  
+  nodes.forEach(node => {
+    const status = getNodeStatus(node.id);
+    const clickable = isNodeClickable(node.id);
+    const isCheckpoint = node.type === 'checkpoint';
+    
+    let displayTitle = node.title;
+    if (isCheckpoint && status === 'waiting' && node.waitingText) {
+      displayTitle = node.waitingText;
+    }
+    if (status === 'completed' && node.completedText) {
+      displayTitle = node.completedText;
+    }
+    
+    const el = document.createElement('div');
+    el.className = `node ${status}${clickable ? ' clickable' : ''}${status === 'pending' && !state.completedNodes.has(node.id) ? ' locked' : ''}`;
+    el.id = `node-${node.id}`;
+    el.style.left = node.x + 'px';
+    el.style.top = node.y + 'px';
+    
+    el.innerHTML = `
+      ${status === 'completed' ? '<div class="completed-badge">✓</div>' : ''}
+      <div class="node-header">
+        <div class="node-icon ${node.icon}">${getIcon(node.icon)}</div>
+        <div class="node-title">${displayTitle}</div>
+      </div>
+      <div class="node-body">
+        <div class="node-status">
+          <div class="status-dot ${status}"></div>
+          <span class="status-text ${status}">${getStatusText(status)}</span>
+        </div>
+      </div>
+      <div class="node-handle input"></div>
+      <div class="node-handle output"></div>
+    `;
+    
+    if (clickable && node.action) {
+      el.onclick = () => executeAction(node.action, node.id);
+    }
+    
+    canvas.appendChild(el);
+  });
+}
+
+function getIcon(type) {
+  const icons = {
+    start: '▶',
+    email: '✉',
+    file: '📄',
+    send: '↗',
+    wait: '⏳',
+    task: '✓',
+    check: '🔍',
+    sign: '✍',
+    doc: '📋',
+    company: '🏢'
+  };
+  return icons[type] || '•';
+}
+
+function getStatusText(status) {
+  const texts = {
+    completed: 'Concluído',
+    active: 'Disponível',
+    waiting: 'Aguardando',
+    pending: 'Pendente'
+  };
+  return texts[status] || status;
+}
+
+function renderConnections() {
+  const svg = document.getElementById('connectors-svg');
+  svg.innerHTML = '';
+  
+  connections.forEach(conn => {
+    const fromNode = nodes.find(n => n.id === conn.from);
+    const toNode = nodes.find(n => n.id === conn.to);
+    if (!fromNode || !toNode) return;
+    
+    const fromCompleted = state.completedNodes.has(conn.from);
+    const toCompleted = state.completedNodes.has(conn.to);
+    const isActive = fromCompleted && !toCompleted;
+    
+    // Calculate connection points
+    const fromX = fromNode.x + 180; // Right side of node
+    const fromY = fromNode.y + 45; // Center height
+    const toX = toNode.x;
+    const toY = toNode.y + 45;
+    
+    let path;
+    if (conn.branch) {
+      // Create curved path for branches
+      const midX = (fromX + toX) / 2;
+      path = `M ${fromX} ${fromY} C ${midX} ${fromY}, ${midX} ${toY}, ${toX} ${toY}`;
+    } else {
+      // Straight horizontal with slight curve
+      const midX = (fromX + toX) / 2;
+      path = `M ${fromX} ${fromY} C ${midX} ${fromY}, ${midX} ${toY}, ${toX} ${toY}`;
+    }
+    
+    const pathEl = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    pathEl.setAttribute('d', path);
+    pathEl.setAttribute('class', `connector-path${fromCompleted && toCompleted ? ' completed' : ''}${isActive ? ' active' : ''}`);
+    svg.appendChild(pathEl);
+  });
+}
+
+function updateUI() {
+  const total = nodes.length;
+  const completed = state.completedNodes.size;
+  const percentage = Math.round((completed / total) * 100);
+
+  document.getElementById('progress-text').textContent = `${completed}/${total}`;
+  document.getElementById('progress-pct').textContent = percentage + '%';
+
+  const circumference = 2 * Math.PI * 11;
+  const ring = document.getElementById('progress-ring');
+  ring.style.strokeDashoffset = circumference - (circumference * percentage / 100);
+
+  document.getElementById('zoom-display').textContent = Math.round(state.zoom * 100) + '%';
+}
+
+function updateCanvas() {
+  const canvas = document.getElementById('canvas');
+  canvas.style.transform = `translate(${state.panX}px, ${state.panY}px) scale(${state.zoom})`;
+  updateMinimap();
+}
+
+function updateMinimap() {
+  const minimapContent = document.getElementById('minimap-content');
+  const viewport = document.getElementById('minimap-viewport');
+  const container = document.getElementById('canvas-container');
+  
+  // Clear minimap nodes
+  minimapContent.querySelectorAll('.minimap-node').forEach(n => n.remove());
+  
+  // Calculate scale
+  const maxX = Math.max(...nodes.map(n => n.x)) + 200;
+  const maxY = Math.max(...nodes.map(n => n.y)) + 100;
+  const scaleX = 180 / maxX;
+  const scaleY = 100 / maxY;
+  const scale = Math.min(scaleX, scaleY) * 0.9;
+  
+  // Render minimap nodes
+  nodes.forEach(node => {
+    const el = document.createElement('div');
+    el.className = `minimap-node${state.completedNodes.has(node.id) ? ' completed' : ''}`;
+    el.style.left = (node.x * scale + 5) + 'px';
+    el.style.top = (node.y * scale + 5) + 'px';
+    el.style.width = '15px';
+    el.style.height = '8px';
+    minimapContent.appendChild(el);
+  });
+  
+  // Update viewport indicator
+  const containerRect = container.getBoundingClientRect();
+  viewport.style.width = (containerRect.width / state.zoom * scale) + 'px';
+  viewport.style.height = (containerRect.height / state.zoom * scale) + 'px';
+  viewport.style.left = (-state.panX / state.zoom * scale + 5) + 'px';
+  viewport.style.top = (-state.panY / state.zoom * scale + 5) + 'px';
+}
+
+// ========== ACTIONS ==========
+function executeAction(action, nodeId) {
+  switch(action) {
+    case 'iniciarProcesso':
+      completeNode(nodeId);
+      break;
+    case 'completar':
+      completeNode(nodeId);
+      break;
+    case 'abrirNotion':
+      window.open('https://www.notion.so/Assist-Adm-Pedro-Ribeiro-305ed334564d8024a3fff2f31abef5ba?source=copy_link#305ed334564d810eaa78f8a09a903a62', '_blank');
+      completeNode(nodeId);
+      break;
+    case 'solicitarArquivos':
+      solicitarArquivos(nodeId);
+      break;
+    case 'receberArquivos':
+      receberArquivos(nodeId);
+      break;
+    case 'enviarSTE':
+      enviarEmail(nodeId, 'STE');
+      break;
+    case 'enviarGIS':
+      enviarEmail(nodeId, 'GISTRAN');
+      break;
+    case 'receberPrevias':
+      receberPrevias(nodeId);
+      break;
+    default:
+      completeNode(nodeId);
+  }
+}
+
+function completeNode(nodeId) {
+  state.completedNodes.add(nodeId);
+  saveState();
+  renderNodes();
+  renderConnections();
+  showInstructionForNext(nodeId);
+}
+
+function solicitarArquivos(nodeId) {
+  const periodo = getPeriodo();
+  const url = `mailto:angelica.albuquerque.colaborador@dnit.gov.br?subject=${encodeURIComponent('497/22 - Solicitação de Arquivos (.txt) - Pontos Eletrônicos')}&body=${encodeURIComponent(`Bom dia, Angélica. Tudo bem?\n\nEstou entrando em contato para solicitar os *Arquivos dos Pontos Eletrônicos* (.txt)\nReferente: *A partir de ${periodo}*\n\nAtt.:\n`)}`;
+  
+  completeNode(nodeId);
+  
+  try {
+    window.top !== window.self ? window.top.location.href = url : window.location.href = url;
+  } catch(e) {
+    window.open(url, '_blank');
+  }
+}
+
+function receberArquivos(nodeId) {
+  completeNode(nodeId);
+  completeNode('ste_label');
+  completeNode('gis_label');
+}
+
+function enviarEmail(nodeId, empresa) {
+  const ref = getRefMes();
+  const email = empresa === 'STE' ? 'rhstebsb@stesa.com.br' : 'marcos.nascimento@stesa.com.br';
+  const url = `mailto:${email}?subject=${encodeURIComponent('497/22 - Envio de Arquivo (.txt) - Ponto Eletrônico')}&body=${encodeURIComponent(`Bom dia, espero que esteja bem.\n\nEm anexo, contém o arquivo .txt referente aos Pontos Eletrônicos - ${empresa}\nReferente à ${ref}\n\nAtt.:\n`)}`;
+  
+  completeNode(nodeId);
+  
+  try {
+    window.top !== window.self ? window.top.location.href = url : window.location.href = url;
+  } catch(e) {
+    window.open(url, '_blank');
+  }
+}
+
+function receberPrevias(nodeId) {
+  // Only complete if both STE and GIS sends are completed
+  if (state.completedNodes.has('ste_send') && state.completedNodes.has('gis_send')) {
+    completeNode(nodeId);
+  }
+}
+
+// ========== INSTRUÇÕES / TOOLTIP ==========
+
+function toggleInstructions() {
+  instructionsEnabled = !instructionsEnabled;
+  const btn = document.getElementById('btn-instructions');
+  if (instructionsEnabled) {
+    btn.classList.add('instructions-on');
+    btn.title = 'Instruções ativadas';
+  } else {
+    btn.classList.remove('instructions-on');
+    btn.title = 'Instruções desativadas';
+    closeAllTooltips();
+  }
+}
+
+// ========== INSTRUÇÕES / TOOLTIP ==========
+let currentTooltipNodeId = null;
+
+function toggleInstructions() {
+  instructionsEnabled = !instructionsEnabled;
+  const btn = document.getElementById('btn-instructions');
+  if (instructionsEnabled) {
+    btn.classList.add('instructions-on');
+    btn.title = 'Instruções ativadas';
+  } else {
+    btn.classList.remove('instructions-on');
+    btn.title = 'Instruções desativadas';
+    closeTooltip();
+  }
+}
+
+function showInstructionForNext(completedNodeId) {
+  if (!instructionsEnabled) return;
+  if (currentTooltipNodeId === completedNodeId) closeTooltip();
+
+  // Para ste_send e gis_send, só avança quando os dois estiverem concluídos
+  if (completedNodeId === 'ste_send' || completedNodeId === 'gis_send') {
+    if (state.completedNodes.has('ste_send') && state.completedNodes.has('gis_send')) {
+      closeTooltipB();
+      showTooltipForNode('previas');
+    }
+    // Se só um foi concluído, mantém os tooltips dos envios visíveis
+    return;
+  }
+
+  const next = instructionTriggers[completedNodeId];
+  if (!next) return;
+  showTooltipForNode(next);
+}
+
+function fillTooltipEl(suffix, data) {
+  document.getElementById('tooltip-title' + suffix).textContent = data.title;
+  document.getElementById('tooltip-text' + suffix).textContent = data.text;
+  const linkEl = document.getElementById('tooltip-link' + suffix);
+  if (data.link) { linkEl.href = data.link; linkEl.style.display = 'inline-flex'; }
+  else { linkEl.style.display = 'none'; }
+  const hintEl = document.getElementById('tooltip-hint' + suffix);
+  const hintText = document.getElementById('tooltip-hint-text' + suffix);
+  if (data.hint) { hintText.textContent = data.hint; hintEl.style.display = 'flex'; }
+  else { hintEl.style.display = 'none'; }
+}
+
+function positionTooltipEl(tooltipId, arrowId, nodeId, forceBelow, forceAbove) {
+  const node = nodes.find(n => n.id === nodeId);
+  if (!node) return;
+  const tooltip = document.getElementById(tooltipId);
+  const arrowEl = document.getElementById(arrowId);
+  const tw = 280;
+  tooltip.style.width = tw + 'px';
+  tooltip.style.left = (node.x + 110 - tw / 2) + 'px';
+
+  // Medir altura com conteúdo já preenchido
+  tooltip.style.visibility = 'hidden';
+  tooltip.style.display = 'block';
+  tooltip.style.opacity = '1';
+  tooltip.style.top = '-9999px';
+  const th = tooltip.offsetHeight;
+  tooltip.style.display = '';
+  tooltip.style.opacity = '';
+  tooltip.style.visibility = '';
+  tooltip.style.top = '';
+
+  let below;
+  if (forceAbove) {
+    below = false;
+  } else if (forceBelow) {
+    below = true;
+  } else {
+    below = (node.y - th - 16) < 10;
+  }
+
+  let top;
+  if (below) {
+    top = node.y + 106;
+    arrowEl.style.bottom = 'auto';
+    arrowEl.style.top = '-6px';
+    arrowEl.style.transform = 'rotate(225deg)';
+  } else {
+    top = node.y - th - 16;
+    arrowEl.style.top = 'auto';
+    arrowEl.style.bottom = '-6px';
+    arrowEl.style.transform = 'rotate(45deg)';
+  }
+  arrowEl.style.left = (tw / 2 - 5) + 'px';
+  tooltip.style.top = top + 'px';
+}
+
+function showTooltipForNode(nodeId) {
+  if (nodeId === 'enviar_txt') {
+    const dataSTE = instructions['ste_send'];
+    const dataGIS = instructions['gis_send'];
+    currentTooltipNodeId = 'enviar_txt';
+
+    // STE: forçar acima
+    fillTooltipEl('', dataSTE);
+    positionTooltipEl('instruction-tooltip', 'tooltip-arrow', 'ste_send', false, true);
+    document.getElementById('instruction-tooltip').classList.add('visible');
+
+    // GISTRAN: forçar abaixo
+    fillTooltipEl('-b', dataGIS);
+    positionTooltipEl('instruction-tooltip-b', 'tooltip-arrow-b', 'gis_send', true, false);
+    document.getElementById('instruction-tooltip-b').classList.add('visible');
+    return;
+  }
+
+  closeTooltipB();
+  const data = instructions[nodeId];
+  if (!data) return;
+  currentTooltipNodeId = nodeId;
+
+  fillTooltipEl('', data);
+  positionTooltipEl('instruction-tooltip', 'tooltip-arrow', nodeId, false, false);
+  document.getElementById('instruction-tooltip').classList.add('visible');
+}
+
+function closeTooltip() {
+  document.getElementById('instruction-tooltip').classList.remove('visible');
+  closeTooltipB();
+  currentTooltipNodeId = null;
+}
+
+function closeTooltipB() {
+  document.getElementById('instruction-tooltip-b').classList.remove('visible');
+}
+
+// ========== ZOOM & PAN ==========
+function zoomIn() {
+  state.zoom = Math.min(state.zoom * 1.2, 2);
+  updateCanvas();
+  saveState();
+}
+
+function zoomOut() {
+  state.zoom = Math.max(state.zoom / 1.2, 0.3);
+  updateCanvas();
+  saveState();
+}
+
+function fitToScreen() {
+  const container = document.getElementById('canvas-container');
+  const maxX = Math.max(...nodes.map(n => n.x)) + 250;
+  const maxY = Math.max(...nodes.map(n => n.y)) + 150;
+  
+  const scaleX = container.clientWidth / maxX;
+  const scaleY = container.clientHeight / maxY;
+  state.zoom = Math.min(scaleX, scaleY, 1) * 0.9;
+  state.panX = 50;
+  state.panY = 50;
+  
+  updateCanvas();
+  saveState();
+}
+
+function centerCanvas() {
+  state.panX = 50;
+  state.panY = 50;
+  state.zoom = 0.8;
+  updateCanvas();
+  saveState();
+}
+
+// Pan with mouse drag
+let isDragging = false;
+let lastX, lastY;
+
+document.getElementById('canvas-container').addEventListener('mousedown', (e) => {
+  if (e.target.closest('.node')) return;
+  isDragging = true;
+  lastX = e.clientX;
+  lastY = e.clientY;
+  document.getElementById('canvas-container').classList.add('dragging');
+});
+
+document.addEventListener('mousemove', (e) => {
+  if (!isDragging) return;
+  state.panX += e.clientX - lastX;
+  state.panY += e.clientY - lastY;
+  lastX = e.clientX;
+  lastY = e.clientY;
+  updateCanvas();
+});
+
+document.addEventListener('mouseup', () => {
+  if (isDragging) {
+    isDragging = false;
+    document.getElementById('canvas-container').classList.remove('dragging');
+    saveState();
+  }
+});
+
+// Zoom with wheel
+document.getElementById('canvas-container').addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const delta = e.deltaY > 0 ? 0.9 : 1.1;
+  state.zoom = Math.max(0.3, Math.min(2, state.zoom * delta));
+  updateCanvas();
+  saveState();
+});
+
+// ========== MODAL ==========
+function showResetModal() {
+  document.getElementById('reset-modal').classList.add('show');
+}
+
+function hideResetModal() {
+  document.getElementById('reset-modal').classList.remove('show');
+}
+
+function confirmReset() {
+  localStorage.removeItem(STORAGE_KEY);
+  location.reload();
+}
+
+// ========== INIT ==========
+function init() {
+  loadState();
+  renderNodes();
+  renderConnections();
+  updateCanvas();
+  updateUI();
+  
+  // Initialize if first run
+  if (!state.initiated) {
+    state.initiated = Date.now();
+    saveState();
+  }
+}
+
+document.addEventListener('DOMContentLoaded', init);
+</script>
+
+</body>
+</html>
