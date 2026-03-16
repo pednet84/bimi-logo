@@ -759,11 +759,6 @@ html, body {
           </a>
         </div>
       </div>
-      <div class="minimap" id="minimap">
-        <div class="minimap-content" id="minimap-content">
-          <div class="minimap-viewport" id="minimap-viewport"></div>
-        </div>
-      </div>
     </div>
   </main>
 </div>
@@ -1161,41 +1156,6 @@ function updateUI() {
 function updateCanvas() {
   const canvas = document.getElementById('canvas');
   canvas.style.transform = `translate(${state.panX}px, ${state.panY}px) scale(${state.zoom})`;
-  updateMinimap();
-}
-
-function updateMinimap() {
-  const minimapContent = document.getElementById('minimap-content');
-  const viewport = document.getElementById('minimap-viewport');
-  const container = document.getElementById('canvas-container');
-  
-  // Clear minimap nodes
-  minimapContent.querySelectorAll('.minimap-node').forEach(n => n.remove());
-  
-  // Calculate scale
-  const maxX = Math.max(...nodes.map(n => n.x)) + 200;
-  const maxY = Math.max(...nodes.map(n => n.y)) + 100;
-  const scaleX = 180 / maxX;
-  const scaleY = 100 / maxY;
-  const scale = Math.min(scaleX, scaleY) * 0.9;
-  
-  // Render minimap nodes
-  nodes.forEach(node => {
-    const el = document.createElement('div');
-    el.className = `minimap-node${state.completedNodes.has(node.id) ? ' completed' : ''}`;
-    el.style.left = (node.x * scale + 5) + 'px';
-    el.style.top = (node.y * scale + 5) + 'px';
-    el.style.width = '15px';
-    el.style.height = '8px';
-    minimapContent.appendChild(el);
-  });
-  
-  // Update viewport indicator
-  const containerRect = container.getBoundingClientRect();
-  viewport.style.width = (containerRect.width / state.zoom * scale) + 'px';
-  viewport.style.height = (containerRect.height / state.zoom * scale) + 'px';
-  viewport.style.left = (-state.panX / state.zoom * scale + 5) + 'px';
-  viewport.style.top = (-state.panY / state.zoom * scale + 5) + 'px';
 }
 
 // ========== ACTIONS ==========
